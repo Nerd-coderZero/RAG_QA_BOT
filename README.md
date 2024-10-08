@@ -6,10 +6,9 @@ This project implements a Retrieval-Augmented Generation (RAG) QA bot that lever
 ## Installation
 To set up the project, follow these steps:
 
-1. Clone the repository:
-   ```bash
-   git clone <repository_url>
-   cd RAG_QA_Bot
+1. Clone the repository or download zip and extract on your project directory:
+   
+cd RAG_QA_BOT
 
 2. Create a virtual environment:
 
