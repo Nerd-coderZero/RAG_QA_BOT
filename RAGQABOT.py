@@ -16,7 +16,6 @@ from pdfminer.high_level import extract_text
 import traceback
 import re
 from collections import defaultdict, OrderedDict, Counter
-import spacy
 import logging
 from typing import List, Dict, Any, Union, Optional
 import wikipedia
@@ -37,7 +36,7 @@ logger = logging.getLogger(__name__)
 class NLTKDownloader:
     @staticmethod
     def ensure_nltk_data():
-        required_packages = ['punkt', 'stopwords', 'punkt_tab']
+        required_packages = ['punkt', 'stopwords', 'averaged_perceptron_tagger']
         for package in required_packages:
             try:
                 nltk.data.find(f'tokenizers/{package}')
@@ -46,6 +45,49 @@ class NLTKDownloader:
                 logger.info(f"Downloading NLTK package '{package}'")
                 nltk.download(package, quiet=True)
 
+class SentenceScorer:
+    def __init__(self, embedding_model: SentenceTransformer):
+        self.embedding_model = embedding_model
+        self.stop_words = set(stopwords.words('english'))
+        
+    def score_sentences(self, sentences: List[str], query: str) -> List[tuple]:
+        # Get embeddings for query and sentences
+        query_embedding = self.embedding_model.encode([query], convert_to_tensor=True)
+        sentence_embeddings = self.embedding_model.encode(sentences, convert_to_tensor=True)
+        
+        # Calculate semantic similarity scores
+        similarities = util.pytorch_cos_sim(query_embedding, sentence_embeddings)[0]
+        
+        # Calculate lexical overlap scores
+        query_words = set(word.lower() for word in word_tokenize(query) 
+                         if word.lower() not in self.stop_words)
+        
+        scored_sentences = []
+        for i, sent in enumerate(sentences):
+            # Lexical scoring
+            sent_words = set(word.lower() for word in word_tokenize(sent) 
+                           if word.lower() not in self.stop_words)
+            word_overlap = len(query_words.intersection(sent_words)) / max(len(query_words), 1)
+            
+            # Length scoring
+            length_score = min(len(sent.split()) / 20, 1.0)  # Prefer medium-length sentences
+            
+            # Semantic similarity from embeddings
+            semantic_score = float(similarities[i])
+            
+            # Combine scores with weights
+            final_score = (
+                semantic_score * 0.5 +  # Semantic similarity is most important
+                word_overlap * 0.3 +    # Word overlap provides direct relevance
+                length_score * 0.2      # Length helps avoid very short or long sentences
+            )
+            
+            scored_sentences.append((sent, final_score))
+        
+        # Sort by score in descending order
+        scored_sentences.sort(key=lambda x: x[1], reverse=True)
+        return scored_sentences
+      
 class DocumentProcessor:
     def __init__(self):
         self.supported_extensions = {'.txt', '.pdf', '.docx'}
@@ -150,13 +192,6 @@ class WebScraper:
 
 class EnhancedRAGQABot:
     def __init__(self, api_key: str, index_name: str):
-        """
-        Initialize the RAG QA Bot with the given API key and index name.
-        
-        Args:
-            api_key (str): Pinecone API key
-            index_name (str): Name of the Pinecone index to use
-        """
         self.initialize_components(api_key, index_name)
         self.web_scraper = WebScraper()
         self.loaded_files = set()
@@ -199,18 +234,11 @@ class EnhancedRAGQABot:
             self.index = self.pc.Index(index_name)
             self.embedding_model = SentenceTransformer('all-mpnet-base-v2')
             self.document_processor = DocumentProcessor()
-            self._init_spacy()
+            self.sentence_scorer = SentenceScorer(self.embedding_model)
+            NLTKDownloader.ensure_nltk_data()
         except Exception as e:
             logger.error(f"Error initializing RAG QA Bot: {str(e)}")
             raise
-
-    def _init_spacy(self):
-        try:
-            self.nlp = spacy.load('en_core_web_sm')
-        except OSError:
-            logger.info("Downloading spaCy model...")
-            os.system('python -m spacy download en_core_web_sm')
-            self.nlp = spacy.load('en_core_web_sm')
 
     def dynamic_search(self, query: str) -> bool:
         """Perform dynamic web search and index the results"""
@@ -303,6 +331,8 @@ class EnhancedRAGQABot:
         )
         return self._process_results(results['matches'], query)
 
+    
+
     def _process_results(self, matches: List[Dict], query: str) -> Dict[str, Any]:
         if not matches:
             return {
@@ -311,11 +341,17 @@ class EnhancedRAGQABot:
                 "sources": []
             }
         
-        relevant_texts = [match['metadata']['text'] for match in matches]
         try:
-            doc = self.nlp(" ".join(relevant_texts))
-            query_doc = self.nlp(query)
-            scored_sentences = self._score_sentences(doc, query_doc)
+            # Extract relevant texts from matches
+            relevant_texts = [match['metadata']['text'] for match in matches]
+            
+            # Split into sentences
+            sentences = []
+            for text in relevant_texts:
+                sentences.extend(sent_tokenize(text))
+            
+            # Score sentences using our new SentenceScorer
+            scored_sentences = self.sentence_scorer.score_sentences(sentences, query)
             
             if not scored_sentences:
                 return {
@@ -323,15 +359,18 @@ class EnhancedRAGQABot:
                     "confidence": 0.1,
                     "sources": []
                 }
-                
-            answer = " ".join([sent for sent, _ in scored_sentences[:3]])
-            avg_score = sum(score for _, score in scored_sentences[:3]) / 3
+            
+            # Take top 3 sentences for the answer
+            top_sentences = scored_sentences[:3]
+            answer = " ".join(sent for sent, _ in top_sentences)
+            avg_confidence = sum(score for _, score in top_sentences) / len(top_sentences)
             
             return {
                 "answer": answer,
-                "confidence": min(avg_score, 1.0),
+                "confidence": min(avg_confidence, 1.0),
                 "sources": [match['metadata'].get('source', 'unknown') for match in matches[:3]]
             }
+            
         except Exception as e:
             logger.error(f"Error processing results: {str(e)}")
             return {
@@ -339,6 +378,7 @@ class EnhancedRAGQABot:
                 "confidence": 0.0,
                 "sources": []
             }
+
 
     def _score_sentences(self, doc, query_doc):
         query_keywords = {token.lemma_.lower() for token in query_doc 
