@@ -1,7 +1,7 @@
 import cohere
 import pinecone
 from sentence_transformers import SentenceTransformer
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 import logging
 from pathlib import Path
 import docx2txt
