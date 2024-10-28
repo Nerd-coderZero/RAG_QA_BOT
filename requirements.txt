@@ -1,0 +1,13 @@
+streamlit
+pinecone-client
+sentence-transformers
+nltk
+torch
+numpy
+requests
+beautifulsoup4
+python-docx
+docx2txt
+pdfminer.six
+spacy
+wikipedia
