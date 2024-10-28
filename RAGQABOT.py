@@ -1,8 +1,9 @@
 import os
+import nltk
+import logging
 import pinecone
 from pinecone import ServerlessSpec
 from sentence_transformers import SentenceTransformer, util
-import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 import torch
@@ -16,7 +17,6 @@ from pdfminer.high_level import extract_text
 import traceback
 import re
 from collections import defaultdict, OrderedDict, Counter
-import logging
 from typing import List, Dict, Any, Union, Optional
 import wikipedia
 from wikipedia.exceptions import DisambiguationError, PageError
@@ -36,14 +36,30 @@ logger = logging.getLogger(__name__)
 class NLTKDownloader:
     @staticmethod
     def ensure_nltk_data():
-        required_packages = ['punkt', 'stopwords', 'averaged_perceptron_tagger']
+        """Ensure all required NLTK data is downloaded"""
+        required_packages = [
+            'punkt',  # Changed from punkt_tab to punkt
+            'stopwords',
+            'averaged_perceptron_tagger'
+        ]
+        
+        # Create nltk_data directory in user's home if it doesn't exist
+        import os
+        nltk_data_dir = os.path.expanduser('~/nltk_data')
+        os.makedirs(nltk_data_dir, exist_ok=True)
+        
         for package in required_packages:
             try:
                 nltk.data.find(f'tokenizers/{package}')
                 logger.info(f"NLTK package '{package}' already downloaded")
             except LookupError:
-                logger.info(f"Downloading NLTK package '{package}'")
-                nltk.download(package, quiet=True)
+                try:
+                    logger.info(f"Downloading NLTK package '{package}'")
+                    nltk.download(package, download_dir=nltk_data_dir, quiet=True)
+                    logger.info(f"Successfully downloaded '{package}'")
+                except Exception as e:
+                    logger.error(f"Error downloading {package}: {str(e)}")
+                    raise Exception(f"Failed to download required NLTK package: {package}")
 
 class SentenceScorer:
     def __init__(self, embedding_model: SentenceTransformer):
@@ -192,6 +208,13 @@ class WebScraper:
 
 class EnhancedRAGQABot:
     def __init__(self, api_key: str, index_name: str):
+        # First ensure NLTK data is downloaded before initializing other components
+        try:
+            NLTKDownloader.ensure_nltk_data()
+        except Exception as e:
+            logger.error(f"Failed to initialize NLTK resources: {str(e)}")
+            raise
+            
         self.initialize_components(api_key, index_name)
         self.web_scraper = WebScraper()
         self.loaded_files = set()
