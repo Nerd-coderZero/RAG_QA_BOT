@@ -1,8 +1,43 @@
 import streamlit as st
 import os
-from typing import List, Optional
+from typing import List
 import tempfile
-from RAGQABOT import EnhancedRAGQABot, NLTKDownloader
+from io import BytesIO
+import sys
+import subprocess
+
+# First, install required packages if not present
+def install_required_packages():
+    required = {
+        'spacy': 'spacy==3.7.2',
+        'torch': 'torch==2.1.0',
+        'numpy': 'numpy==1.24.3',
+        'sentence_transformers': 'sentence-transformers==2.2.2',
+        'pinecone-client': 'pinecone-client==2.2.4',
+        'nltk': 'nltk==3.8.1',
+        'wikipedia': 'wikipedia==1.4.0',
+        'python-docx': 'python-docx==1.0.1',
+        'pdfminer.six': 'pdfminer.six==20221105'
+    }
+    
+    for package, version in required.items():
+        try:
+            __import__(package)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", version])
+
+    # Install spacy model
+    try:
+        import spacy
+        spacy.load('en_core_web_sm')
+    except OSError:
+        subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+
+# Install required packages
+install_required_packages()
+
+# Now import the main RAG bot code
+from ragqabot import EnhancedRAGQABot, NLTKDownloader
 
 def initialize_session_state():
     """Initialize the session state variables"""
@@ -18,111 +53,29 @@ def initialize_session_state():
             # Initialize the QA bot
             st.session_state.qa_bot = EnhancedRAGQABot(api_key, index_name)
             st.session_state.processed_files = set()
+            st.success("✅ QA Bot initialized successfully!")
         except Exception as e:
             st.error(f"Error initializing QA bot: {str(e)}")
             st.stop()
 
-def save_uploaded_file(uploaded_file) -> Optional[str]:
-    """
-    Save uploaded file to temporary directory and return the path
-    
-    Args:
-        uploaded_file: Streamlit UploadedFile object
-    
-    Returns:
-        Optional[str]: Path to saved file or None if error occurs
-    """
+def process_file(uploaded_file) -> bool:
+    """Process a single uploaded file"""
     try:
-        suffix = os.path.splitext(uploaded_file.name)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            return tmp_file.name
+        # Get file content
+        file_content = uploaded_file.read()
+        
+        # Process the file content
+        result = st.session_state.qa_bot.process_uploaded_file(file_content, uploaded_file.name)
+        
+        if not result.startswith("Error"):
+            st.session_state.processed_files.add(uploaded_file.name)
+            return True
+        else:
+            st.error(result)
+            return False
     except Exception as e:
-        st.error(f"Error saving file '{uploaded_file.name}': {str(e)}")
-        return None
-
-def process_uploaded_files(uploaded_files: List[st.uploaded_file_manager.UploadedFile]) -> None:
-    """
-    Process multiple uploaded files and update the session state
-    
-    Args:
-        uploaded_files: List of Streamlit UploadedFile objects
-    """
-    progress_bar = st.progress(0)
-    for idx, uploaded_file in enumerate(uploaded_files):
-        if uploaded_file.name not in st.session_state.processed_files:
-            try:
-                with st.spinner(f"Processing {uploaded_file.name}..."):
-                    file_path = save_uploaded_file(uploaded_file)
-                    if file_path:
-                        result = st.session_state.qa_bot.load_document(file_path)
-                        if not result.startswith("Error"):
-                            st.session_state.processed_files.add(uploaded_file.name)
-                        st.write(result)
-                        # Clean up temporary file
-                        os.unlink(file_path)
-            except Exception as e:
-                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-        progress_bar.progress((idx + 1) / len(uploaded_files))
-    progress_bar.empty()
-
-def display_answer(response: dict) -> None:
-    """
-    Display the QA bot's response in a formatted way
-    
-    Args:
-        response: Dictionary containing answer, confidence, and sources
-    """
-    # Display answer in a card-like container
-    with st.container():
-        st.markdown("### 💭 Answer")
-        st.markdown(f">{response['answer']}")
-        
-        # Display confidence score with colored progress bar
-        st.markdown("### 📊 Confidence Score")
-        confidence = float(response['confidence'])
-        color = 'green' if confidence > 0.7 else 'orange' if confidence > 0.4 else 'red'
-        st.markdown(
-            f"""
-            <div style="border-radius:20px;padding:10px;background-color:{color};width:{confidence*100}%">
-                <p style="color:white;margin:0;text-align:center">{confidence:.2f}</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # Display sources if available
-        if 'sources' in response and response['sources']:
-            st.markdown("### 📚 Sources")
-            sources = [s for s in response['sources'] if s != 'unknown']
-            if sources:
-                for source in sources:
-                    st.markdown(f"- {source}")
-
-def create_sidebar() -> None:
-    """Create and populate the sidebar"""
-    st.sidebar.header("ℹ️ About")
-    st.sidebar.markdown("""
-    ### Features
-    - 📄 Supports PDF, TXT, and DOCX files
-    - 🌐 Dynamic web search capability
-    - 📊 Confidence scoring
-    - 📚 Source attribution
-    
-    ### How to use
-    1. Upload your documents
-    2. Wait for processing to complete
-    3. Ask questions about the content
-    4. View answers with confidence scores
-    
-    ### Processing Status
-    """)
-    if st.session_state.get('processed_files'):
-        st.sidebar.markdown("**Processed Files:**")
-        for file in st.session_state.processed_files:
-            st.sidebar.markdown(f"- ✅ {file}")
-    else:
-        st.sidebar.markdown("*No files processed yet*")
+        st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+        return False
 
 def main():
     st.set_page_config(
@@ -136,35 +89,70 @@ def main():
     st.title("🤖 RAG QA Bot")
     st.markdown("Upload documents and ask questions about their content!")
     
-    # Create two columns for layout
-    col1, col2 = st.columns([2, 1])
+    # File upload section
+    uploaded_files = st.file_uploader(
+        "Upload your documents (PDF, TXT, DOCX)",
+        accept_multiple_files=True,
+        type=['pdf', 'txt', 'docx']
+    )
     
-    with col1:
-        # File upload section
-        uploaded_files = st.file_uploader(
-            "Upload your documents",
-            accept_multiple_files=True,
-            type=['pdf', 'txt', 'docx']
-        )
-        
-        if uploaded_files:
-            if st.button("Process Documents"):
-                process_uploaded_files(uploaded_files)
-                st.success("✅ Documents processed successfully!")
-        
-        # Question input section
-        question = st.text_input("💭 Ask a question about your documents:")
-        
-        if question:
+    # Process uploaded files
+    if uploaded_files:
+        if st.button("Process Documents"):
+            progress_text = st.empty()
+            progress_bar = st.progress(0)
+            
+            processed_count = 0
+            for idx, file in enumerate(uploaded_files):
+                progress_text.text(f"Processing {file.name}...")
+                if process_file(file):
+                    processed_count += 1
+                progress_bar.progress((idx + 1) / len(uploaded_files))
+            
+            progress_text.empty()
+            progress_bar.empty()
+            
+            if processed_count > 0:
+                st.success(f"✅ Successfully processed {processed_count} documents!")
+    
+    # Question input section
+    question = st.text_input("💭 Ask a question about your documents:")
+    
+    if question:
+        if not st.session_state.processed_files:
+            st.warning("⚠️ Please upload and process some documents first!")
+        else:
             with st.spinner("🤔 Thinking..."):
                 try:
                     response = st.session_state.qa_bot.answer_query(question)
-                    display_answer(response)
+                    
+                    # Display answer
+                    st.markdown("### 💡 Answer")
+                    st.write(response["answer"])
+                    
+                    # Display confidence score
+                    confidence = float(response["confidence"])
+                    st.markdown("### 📊 Confidence Score")
+                    st.progress(confidence)
+                    st.write(f"{confidence:.2f}")
+                    
+                    # Display sources
+                    if 'sources' in response and response['sources']:
+                        st.markdown("### 📚 Sources")
+                        sources = [s for s in response['sources'] if s != 'unknown']
+                        if sources:
+                            for source in sources:
+                                st.write(f"- {source}")
                 except Exception as e:
                     st.error(f"Error processing question: {str(e)}")
     
-    with col2:
-        create_sidebar()
+    # Sidebar
+    st.sidebar.header("📋 Processed Files")
+    if st.session_state.get('processed_files'):
+        for file in st.session_state.processed_files:
+            st.sidebar.success(f"✅ {file}")
+    else:
+        st.sidebar.info("No files processed yet")
 
 if __name__ == "__main__":
     main()
