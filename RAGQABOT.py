@@ -23,6 +23,8 @@ from wikipedia.exceptions import DisambiguationError, PageError
 import json
 import tempfile
 
+nltk.download('punkt')
+
 # Constants for easy tweaking
 MAX_CHUNK_SIZE = 1000
 BATCH_SIZE = 32
