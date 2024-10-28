@@ -10,3 +10,4 @@ python-docx
 docx2txt
 pdfminer.six
 wikipedia
+cohere
