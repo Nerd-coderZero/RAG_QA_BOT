@@ -1,5 +1,4 @@
 import os
-import nltk
 import logging
 import pinecone
 from pinecone import ServerlessSpec
@@ -22,8 +21,9 @@ import wikipedia
 from wikipedia.exceptions import DisambiguationError, PageError
 import json
 import tempfile
-
+import nltk
 nltk.download('punkt')
+nltk.download('stopwords')
 
 # Constants for easy tweaking
 MAX_CHUNK_SIZE = 1000
