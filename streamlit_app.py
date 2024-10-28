@@ -4,7 +4,7 @@ from typing import List
 import tempfile
 from pathlib import Path
 import logging
-from HybridDocQA import HybridDocQA  # Update this import to your actual module
+from RAGQABOT import HybridDocQA  # Update this import to your actual module
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
