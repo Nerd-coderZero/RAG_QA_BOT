@@ -9,5 +9,5 @@ beautifulsoup4
 python-docx
 docx2txt
 pdfminer.six
-spacy
+spacy==3.7.2
 wikipedia
