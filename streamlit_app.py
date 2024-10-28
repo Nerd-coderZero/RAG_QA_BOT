@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Import RAG components with error handling
 try:
-    from ragqabot import EnhancedRAGQABot, NLTKDownloader
+    from RAGQABOT import EnhancedRAGQABot, NLTKDownloader
 except ImportError as e:
     st.error(f"Failed to import RAG components: {str(e)}")
     st.stop()
