@@ -9,15 +9,15 @@ import subprocess
 # First, install required packages if not present
 def install_required_packages():
     required = {
-        'spacy': 'spacy==3.7.2',
-        'torch': 'torch==2.1.0',
-        'numpy': 'numpy==1.24.3',
-        'sentence_transformers': 'sentence-transformers==2.2.2',
-        'pinecone-client': 'pinecone-client==2.2.4',
-        'nltk': 'nltk==3.8.1',
-        'wikipedia': 'wikipedia==1.4.0',
-        'python-docx': 'python-docx==1.0.1',
-        'pdfminer.six': 'pdfminer.six==20221105'
+        'spacy': 'spacy',
+        'torch': 'torch',
+        'numpy': 'numpy',
+        'sentence_transformers': 'sentence-transformers',
+        'pinecone-client': 'pinecone-client',
+        'nltk': 'nltk',
+        'wikipedia': 'wikipedia',
+        'python-docx': 'python-docx',
+        'pdfminer.six': 'pdfminer.six'
     }
     
     for package, version in required.items():
