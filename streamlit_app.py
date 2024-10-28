@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from typing import List, Optional
 import tempfile
-from ragqabot import EnhancedRAGQABot, NLTKDownloader
+from RAGQABOT import EnhancedRAGQABot, NLTKDownloader
 
 def initialize_session_state():
     """Initialize the session state variables"""
