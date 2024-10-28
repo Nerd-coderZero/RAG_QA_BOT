@@ -5,6 +5,7 @@ from pinecone import ServerlessSpec
 from sentence_transformers import SentenceTransformer, util
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
+import cohere
 import torch
 import numpy as np
 import requests
@@ -64,6 +65,41 @@ class NLTKDownloader:
                     logger.error(f"Error downloading {package}: {str(e)}")
                     raise Exception(f"Failed to download required NLTK package: {package}")
 
+class CohereWrapper:
+    def __init__(self):
+        """Initialize Cohere with free API key"""
+        try:
+            # Try to get API key from environment or use demo key
+            self.api_key = os.getenv('COHERE_API_KEY', 'trial')  # Cohere provides trial access
+            self.co = cohere.Client(self.api_key)
+        except Exception as e:
+            print(f"Error initializing Cohere: {str(e)}")
+            self.co = None
+
+    def generate_response(self, context: str, query: str) -> str:
+        if not self.co:
+            return "Cohere client not initialized properly."
+            
+        try:
+            prompt = f"""Context: {context}
+
+Question: {query}
+
+Please provide a clear and concise answer based on the context above."""
+
+            response = self.co.generate(
+                prompt=prompt,
+                max_tokens=150,
+                temperature=0.7,
+                k=0,
+                stop_sequences=[],
+                return_likelihoods='NONE'
+            )
+            
+            return response.generations[0].text.strip()
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
+            
 class SentenceScorer:
     def __init__(self, embedding_model: SentenceTransformer):
         self.embedding_model = embedding_model
@@ -221,6 +257,7 @@ class EnhancedRAGQABot:
         self.initialize_components(api_key, index_name)
         self.web_scraper = WebScraper()
         self.loaded_files = set()
+        self.llm = CohereWrapper()
         
     def process_uploaded_file(self, file_content: bytes, filename: str) -> str:
         """
@@ -329,17 +366,34 @@ class EnhancedRAGQABot:
 
     def answer_query(self, query: str) -> Dict[str, Any]:
         try:
+            # First try getting answer from indexed documents
             local_response = self._get_local_answer(query)
             
-            # If confidence is low, try web search
+            # If confidence is high enough, return the local response
+            if local_response['confidence'] > 0.7:
+                return local_response
+                
+            # Try web search if local confidence is low
             if local_response['confidence'] < 0.5:
-                logger.info("Low confidence, attempting web search...")
                 if self.dynamic_search(query):
                     web_response = self._get_local_answer(query)
                     if web_response['confidence'] > local_response['confidence']:
-                        return web_response
-                        
-            return self._generate_fallback_response(local_response)
+                        local_response = web_response
+            
+            # If we still don't have a good answer, use Cohere to generate a better response
+            if local_response['confidence'] < 0.7:
+                context = local_response['answer']
+                cohere_response = self.llm.generate_response(context, query)
+                
+                return {
+                    "answer": cohere_response,
+                    "confidence": local_response['confidence'],
+                    "sources": local_response.get('sources', []),
+                    "note": "Response enhanced using Cohere"
+                }
+                
+            return local_response
+            
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
             return {
