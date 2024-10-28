@@ -46,7 +46,7 @@ def save_uploaded_file(uploaded_file) -> Path:
         st.error(f"Error saving file: {str(e)}")
         return None
 
-def process_uploaded_files(uploaded_files: List[st.uploaded_file_manager.UploadedFile]) -> List[Path]:
+def process_uploaded_files(uploaded_files: List[st.runtime.uploaded_file_manager.UploadedFile]) -> List[Path]:
     """Process multiple uploaded files and return their paths"""
     file_paths = []
     for uploaded_file in uploaded_files:
@@ -92,30 +92,30 @@ def main():
         st.session_state.qa_bot = qa_bot
 
     # File upload section
-    uploaded_files = st.file_uploader(
-        "Upload your documents",
-        accept_multiple_files=True,
-        type=['pdf', 'txt', 'docx']
-    )
-
-    if uploaded_files:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            if st.button("Process Documents", type="primary"):
-                with st.spinner("Processing documents..."):
-                    file_paths = process_uploaded_files(uploaded_files)
-                    
-                    for file_path in file_paths:
-                        try:
-                            result = st.session_state.qa_bot.load_document(file_path)
-                            st.write(result)
-                            # Clean up temporary file
-                            os.unlink(file_path)
-                        except Exception as e:
-                            st.error(f"Error processing {file_path.name}: {str(e)}")
-                            logger.error(f"Document processing error: {str(e)}")
-                    
-                    st.success("Documents processed successfully!")
+    with st.form("upload_form"):
+        uploaded_files = st.file_uploader(
+            "Upload your documents",
+            accept_multiple_files=True,
+            type=['pdf', 'txt', 'docx']
+        )
+        
+        submit_button = st.form_submit_button("Process Documents")
+        
+        if submit_button and uploaded_files:
+            with st.spinner("Processing documents..."):
+                file_paths = process_uploaded_files(uploaded_files)
+                
+                for file_path in file_paths:
+                    try:
+                        result = st.session_state.qa_bot.load_document(file_path)
+                        st.write(result)
+                        # Clean up temporary file
+                        os.unlink(file_path)
+                    except Exception as e:
+                        st.error(f"Error processing {file_path.name}: {str(e)}")
+                        logger.error(f"Document processing error: {str(e)}")
+                
+                st.success("Documents processed successfully!")
 
     # Question input section
     question = st.text_input("Ask a question about your documents:", 
